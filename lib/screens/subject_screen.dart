@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/sheet_service.dart';
 import 'quiz_screen.dart';
 
-class SubjectScreen extends StatelessWidget {
+class SubjectScreen extends StatefulWidget {
   final String selectedClass;
   final String mode; // 'mcq', 'practice', या 'notes'
 
@@ -11,293 +14,369 @@ class SubjectScreen extends StatelessWidget {
     required this.mode,
   });
 
-  // डेमो डेटा (चैप्टर लिस्ट - बाद में Google Sheet से आएगी)
-  final List<Map<String, dynamic>> subjects = const [
-    {
-      'name': 'Science',
-      'icon': Icons.science,
-      'color': Colors.teal,
-      'chapters': [
-        'Chapter 1: Chemical Reactions & Equations',
-        'Chapter 2: Acids, Bases and Salts',
-        'Chapter 3: Metals and Non-metals',
-        'Chapter 4: Life Processes',
-      ]
-    },
-    {
-      'name': 'Mathematics',
-      'icon': Icons.calculate,
-      'color': Colors.indigo,
-      'chapters': [
-        'Chapter 1: Real Numbers',
-        'Chapter 2: Polynomials',
-        'Chapter 3: Quadratic Equations',
-      ]
-    },
-    {
-      'name': 'Social Science / History',
-      'icon': Icons.history_edu,
-      'color': Colors.brown,
-      'chapters': [
-        'Chapter 1: The Rise of Nationalism in Europe',
-        'Chapter 2: Nationalism in India',
-      ]
-    },
-  ];
+  @override
+  State<SubjectScreen> createState() => _SubjectScreenState();
+}
 
-  // 1. MCQ के लिए 5 क्विज़ सेट्स वाली शीट
-  void _openQuizSetsSheet(BuildContext context, String subjectName, String chapterTitle) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(chapterTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Choose a Quiz Set (20 Questions each)', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-              const SizedBox(height: 16),
-              ...List.generate(5, (index) {
-                final quizNum = index + 1;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.deepPurple.shade50,
-                    child: Text('$quizNum', style: const TextStyle(color: Colors.deepPurple, fontWeight: FontWeight.bold)),
-                  ),
-                  title: Text('Quiz Set $quizNum', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('20 Questions • 15 Mins', style: TextStyle(fontSize: 12)),
-                  trailing: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => QuizScreen(
-                            selectedClass: selectedClass,
-                            subject: subjectName,
-                            chapter: chapterTitle,
-                            quizSetNumber: quizNum,
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Text('Start'),
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
+class _SubjectScreenState extends State<SubjectScreen> {
+  bool _isLoading = true;
+  String _userSubscription = 'FREE';
+
+  Map<String, List<Map<String, dynamic>>> _groupedData = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
   }
 
-  // 2. Practice Questions के लिए PDF Question Sets वाली शीट
-  void _openPracticePdfsSheet(BuildContext context, String subjectName, String chapterTitle) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(chapterTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Practice Question Sets (PDFs)', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-              const SizedBox(height: 16),
-              ...List.generate(3, (index) {
-                final setNum = index + 1;
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.picture_as_pdf, color: Colors.orange),
-                  ),
-                  title: Text('Practice Set $setNum (Questions & Solutions)', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('Downloadable PDF • 8 Pages', style: TextStyle(fontSize: 12)),
-                  trailing: ElevatedButton.icon(
-                    icon: const Icon(Icons.remove_red_eye, size: 16),
-                    label: const Text('View PDF'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Opening PDF: Practice Set $setNum for $chapterTitle')),
-                      );
-                    },
-                  ),
-                );
-              }),
-            ],
-          ),
-        );
-      },
-    );
+  String _getTargetSheetName() {
+    // क्लास नाम को साफ करके "8th", "9th", "10th" में बदलना
+    String prefix = "8th";
+    if (widget.selectedClass.contains("9")) {
+      prefix = "9th";
+    } else if (widget.selectedClass.contains("10")) {
+      prefix = "10th";
+    }
+
+    if (widget.mode == 'mcq') {
+      return '$prefix MCQ';
+    } else if (widget.mode == 'notes') {
+      return '$prefix Notes';
+    } else {
+      return '$prefix practice pdf';
+    }
   }
 
-  // 3. Purix Notes के लिए PDF Notes वाली शीट
-  void _openNotesSheet(BuildContext context, String subjectName, String chapterTitle) {
-    final noteTypes = [
-      {'title': 'Complete Chapter Notes (Purix Special)', 'desc': 'Full concepts + diagrams', 'color': Colors.purple},
-      {'title': 'Quick Revision & Formula Sheet', 'desc': '1-page short summary', 'color': Colors.deepPurple},
-    ];
+  Future<void> _loadInitialData() async {
+    setState(() => _isLoading = true);
 
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(chapterTitle, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text('Purix Academy Study Notes (PDF)', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-              const SizedBox(height: 16),
-              ...noteTypes.map((note) {
-                return ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.purple.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.menu_book, color: Colors.purple),
-                  ),
-                  title: Text(note['title'] as String, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                  subtitle: Text(note['desc'] as String, style: const TextStyle(fontSize: 12)),
-                  trailing: ElevatedButton.icon(
-                    icon: const Icon(Icons.visibility, size: 16),
-                    label: const Text('Read'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.purple,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Opening Notes: ${note['title']}')),
-                      );
-                    },
-                  ),
-                );
-              }),
-            ],
-          ),
+    final prefs = await SharedPreferences.getInstance();
+    _userSubscription = prefs.getString('user_sub') ?? 'FREE';
+
+    final targetSheet = _getTargetSheetName();
+    final data = await SheetService.fetchSheetData(targetSheet);
+
+    // Subject के आधार पर डेटा ग्रुप करना
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (var row in data) {
+      final subject = (row['Subject'] ?? row['subject'] ?? 'General').toString().trim();
+      if (subject.isNotEmpty) {
+        if (!grouped.containsKey(subject)) {
+          grouped[subject] = [];
+        }
+        grouped[subject]!.add(row);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        
+        _groupedData = grouped;
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _openPdfLink(String url) async {
+    if (url.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Resource link not available.")),
+      );
+      return;
+    }
+
+    final uri = Uri.parse(url.trim());
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Unable to open resource link.")),
         );
-      },
+      }
+    }
+  }
+
+  void _showLockAlert() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF0B111E),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: Color(0xFFFFD700), width: 1.2),
+        ),
+        title: const Row(
+          children: [
+            Icon(Icons.lock, color: Color(0xFFFFD700), size: 22),
+            SizedBox(width: 8),
+            Text(
+              "PRO MODULE LOCKED",
+              style: TextStyle(color: Color(0xFFFFD700), fontSize: 15, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: const Text(
+          "This study asset is part of the Purix Pro Pass. Upgrade your account or contact support on WhatsApp to unlock complete access.",
+          style: TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("CLOSE", style: TextStyle(color: Colors.white54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.pop(context); // डैशबोर्ड पर वापस जाकर अपग्रेड कर सकते हैं
+            },
+            child: const Text("VIEW PRO PASS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    String titleText;
-    IconData leadingIcon;
-    Color themeColor;
-    String badgeText;
+    const darkVoid = Color(0xFF070B14);
+    const cardBg = Color(0xFF0B111E);
+    const neonCyan = Color(0xFF00F0FF);
+    const neonGreen = Color(0xFF00FF66);
+    const neonGold = Color(0xFFFFD700);
 
-    if (mode == 'mcq') {
-      titleText = '$selectedClass - MCQ Test';
-      leadingIcon = Icons.quiz;
-      themeColor = Colors.green;
-      badgeText = '5 Sets';
-    } else if (mode == 'practice') {
-      titleText = '$selectedClass - Practice Questions';
-      leadingIcon = Icons.edit_note;
-      themeColor = Colors.orange;
-      badgeText = 'Practice PDFs';
+    String titleText = "${widget.selectedClass} - Modules";
+    Color themeGlow = neonGreen;
+
+    if (widget.mode == 'mcq') {
+      titleText = "${widget.selectedClass} - MCQ Tests";
+      themeGlow = const Color(0xFF00FF66);
+    } else if (widget.mode == 'practice') {
+      titleText = "${widget.selectedClass} - Practice Sets";
+      themeGlow = const Color(0xFFFF9900);
     } else {
-      titleText = '$selectedClass - Purix Notes';
-      leadingIcon = Icons.menu_book;
-      themeColor = Colors.purple;
-      badgeText = 'Purix Notes';
+      titleText = "${widget.selectedClass} - Purix Notes";
+      themeGlow = const Color(0xFFBF00FF);
     }
 
     return Scaffold(
+      backgroundColor: darkVoid,
       appBar: AppBar(
-        title: Text(titleText, style: const TextStyle(color: Colors.white, fontSize: 17)),
-        backgroundColor: Colors.deepPurple,
+        backgroundColor: const Color(0xFF0A0F1D),
+        elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(
+          titleText.toUpperCase(),
+          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, color: neonCyan),
+            onPressed: _loadInitialData,
+          ),
+        ],
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: subjects.length,
-        itemBuilder: (context, sIndex) {
-          final sub = subjects[sIndex];
-          final chapters = sub['chapters'] as List<String>;
-
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.only(bottom: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ExpansionTile(
-              leading: CircleAvatar(
-                backgroundColor: (sub['color'] as Color).withValues(alpha: 0.15),
-                child: Icon(sub['icon'] as IconData, color: sub['color'] as Color),
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: neonCyan),
+                  SizedBox(height: 16),
+                  Text("FETCHING CURRICULUM NODE...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
+                ],
               ),
-              title: Text(
-                sub['name'],
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              subtitle: Text('${chapters.length} Chapters available', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-              children: chapters.map((chap) {
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  leading: Icon(leadingIcon, size: 20, color: themeColor),
-                  title: Text(chap, style: const TextStyle(fontSize: 14)),
-                  trailing: Chip(
-                    label: Text(
-                      badgeText,
-                      style: TextStyle(fontSize: 11, color: themeColor),
+            )
+          : _groupedData.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.layers_clear_outlined, color: Colors.white.withValues(alpha: 0.3), size: 48),
+                        const SizedBox(height: 12),
+                        const Text(
+                          "NO DATA LOADED YET",
+                          style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.2),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          "Ensure records exist in sheet: ${_getTargetSheetName()}",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Colors.white38, fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                        const SizedBox(height: 16),
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF101726)),
+                          onPressed: _loadInitialData,
+                          icon: const Icon(Icons.refresh, size: 16, color: neonCyan),
+                          label: const Text("RETRY CONNECTION", style: TextStyle(color: neonCyan, fontSize: 12)),
+                        ),
+                      ],
                     ),
-                    backgroundColor: themeColor.withValues(alpha: 0.1),
                   ),
-                  onTap: () {
-                    if (mode == 'mcq') {
-                      _openQuizSetsSheet(context, sub['name'], chap);
-                    } else if (mode == 'practice') {
-                      _openPracticePdfsSheet(context, sub['name'], chap);
-                    } else {
-                      _openNotesSheet(context, sub['name'], chap);
-                    }
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                  itemCount: _groupedData.keys.length,
+                  itemBuilder: (context, index) {
+                    final subject = _groupedData.keys.elementAt(index);
+                    final items = _groupedData[subject]!;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: cardBg,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: themeGlow.withValues(alpha: 0.3), width: 1.2),
+                      ),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          leading: CircleAvatar(
+                            backgroundColor: themeGlow.withValues(alpha: 0.12),
+                            child: Icon(
+                              widget.mode == 'mcq'
+                                  ? Icons.quiz
+                                  : widget.mode == 'notes'
+                                      ? Icons.menu_book
+                                      : Icons.hub,
+                              color: themeGlow,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            subject.toUpperCase(),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.1),
+                          ),
+                          subtitle: Text(
+                            "${items.length} MODULES READY",
+                            style: TextStyle(color: themeGlow.withValues(alpha: 0.7), fontSize: 10, fontFamily: 'monospace'),
+                          ),
+                          children: items.map((item) {
+                            final accessType = (item['Access_Type'] ?? item['access_type'] ?? 'FREE').toString().toUpperCase().trim();
+                            final isItemFree = accessType == 'FREE';
+                            final hasAccess = isItemFree || _userSubscription == 'PRO';
+
+                            final chapterName = item['Chapter'] ?? item['chapter'] ?? 'Chapter';
+                            final titleHin = item['Title-hin'] ?? item['Title_hin'] ?? item['Set Name-hin'] ?? item['MCQ hin'] ?? '';
+                            final titleEng = item['Title-eng'] ?? item['Title_eng'] ?? item['Set-name-eng'] ?? item['MCQ eng'] ?? '';
+
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF101726),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white12),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          chapterName,
+                                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                        ),
+                                        if (titleEng.isNotEmpty || titleHin.isNotEmpty) ...[
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            titleEng.isNotEmpty ? titleEng : titleHin,
+                                            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: isItemFree ? neonGreen.withValues(alpha: 0.15) : neonGold.withValues(alpha: 0.15),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                isItemFree ? "FREE" : "PRO ONLY",
+                                                style: TextStyle(
+                                                  color: isItemFree ? neonGreen : neonGold,
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (!hasAccess)
+                                    IconButton(
+                                      icon: const Icon(Icons.lock, color: neonGold, size: 20),
+                                      onPressed: _showLockAlert,
+                                    )
+                                  else if (widget.mode == 'mcq')
+                                    ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: neonGreen,
+                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (context) => QuizScreen(
+                                              selectedClass: widget.selectedClass,
+                                              subject: subject,
+                                              chapter: chapterName,
+                                              quizSetNumber: 1,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      child: const Text("START", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
+                                    )
+                                  else ...[
+                                    // Notes & Practice Links
+                                    IconButton(
+                                      tooltip: "Open Resource",
+                                      icon: Icon(
+                                        widget.mode == 'notes' ? Icons.menu_book : Icons.picture_as_pdf,
+                                        color: neonCyan,
+                                        size: 22,
+                                      ),
+                                      onPressed: () {
+                                        final link = (item['Drive-link-eng'] ??
+                                                item['Drive_link_eng'] ??
+                                                item['Drive-link-hin'] ??
+                                                item['Drive_link_hin'] ??
+                                                item['Question-pdf-link'] ??
+                                                item['Question_pdf_link'] ??
+                                                '')
+                                            .toString();
+                                        _openPdfLink(link);
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    );
                   },
-                );
-              }).toList(),
-            ),
-          );
-        },
-      ),
+                ),
     );
   }
 }

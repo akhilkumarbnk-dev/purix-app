@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/sheet_service.dart';
 import 'class_screen.dart';
 import 'subject_screen.dart';
 import 'free_content_screen.dart';
+import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final String userName;
@@ -19,11 +23,283 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   late String currentClass;
+  late String currentName;
+  String currentPhone = '';
+  String currentEmail = '';
+  String subscriptionStatus = 'FREE';
+
+  // अकादमी हेल्पलाइन नंबर और UPI ID
+  final String supportWhatsAppNumber = "919508774890"; 
+  final String academyUPI = "6201161834@ptyes";
 
   @override
   void initState() {
     super.initState();
     currentClass = widget.selectedClass;
+    currentName = widget.userName;
+    _loadUserDataAndCheckProfile();
+  }
+
+  Future<void> _loadUserDataAndCheckProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      currentPhone = prefs.getString('user_phone') ?? '';
+      currentEmail = prefs.getString('user_email') ?? '';
+      subscriptionStatus = prefs.getString('user_sub') ?? 'FREE';
+      currentName = prefs.getString('user_name') ?? widget.userName;
+    });
+
+    // अगर फोन नंबर नहीं मिला तो अनिवार्य प्रोफाइल डायलॉग खोलें
+    if (currentPhone.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showProfileDialog(isMandatory: true);
+      });
+    }
+  }
+
+  void _showProfileDialog({bool isMandatory = false}) {
+    final nameCtrl = TextEditingController(text: currentName);
+    final phoneCtrl = TextEditingController(text: currentPhone);
+    const neonGold = Color(0xFFFFD700);
+
+    showDialog(
+      context: context,
+      barrierDismissible: !isMandatory,
+      builder: (context) {
+        return PopScope(
+          canPop: !isMandatory,
+          child: Dialog(
+            backgroundColor: const Color(0xFF0B111E),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: const BorderSide(color: neonGold, width: 1.5),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(22),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.shield_outlined, color: neonGold, size: 24),
+                      const SizedBox(width: 8),
+                      Text(
+                        isMandatory ? "COMPLETE CADET PROFILE" : "EDIT CADET PROFILE",
+                        style: const TextStyle(
+                          color: neonGold,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    "Enter your valid details to activate your student node and test access.",
+                    style: TextStyle(color: Colors.white70, fontSize: 11),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: nameCtrl,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      labelText: "Cadet Name",
+                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 13),
+                      prefixIcon: const Icon(Icons.person, color: neonGold, size: 20),
+                      filled: true,
+                      fillColor: const Color(0xFF101726),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: neonGold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: phoneCtrl,
+                    keyboardType: TextInputType.phone,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    decoration: InputDecoration(
+                      labelText: "WhatsApp / Mobile Number",
+                      labelStyle: const TextStyle(color: Colors.white54, fontSize: 13),
+                      prefixIcon: const Icon(Icons.phone, color: neonGold, size: 20),
+                      filled: true,
+                      fillColor: const Color(0xFF101726),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: Colors.white12),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(color: neonGold),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 46,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: neonGold,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        elevation: 6,
+                      ),
+                      onPressed: () async {
+                        final enteredName = nameCtrl.text.trim();
+                        final enteredPhone = phoneCtrl.text.trim();
+
+                        if (enteredName.isEmpty || enteredPhone.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Please fill all details to proceed")),
+                          );
+                          return;
+                        }
+
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setString('user_name', enteredName);
+                        await prefs.setString('user_phone', enteredPhone);
+
+                        setState(() {
+                          currentName = enteredName;
+                          currentPhone = enteredPhone;
+                        });
+
+                        if (!mounted) return;
+                        Navigator.pop(context);
+
+                        // Google Sheets User ID टैब के साथ बैकग्राउंड सिंक
+                        final sub = await SheetService.syncUserProfile(
+                          name: enteredName,
+                          phone: enteredPhone,
+                          email: currentEmail.isNotEmpty ? currentEmail : "N/A",
+                          selectedClass: currentClass,
+                        );
+
+                        await prefs.setString('user_sub', sub);
+                        if (mounted) {
+                          setState(() {
+                            subscriptionStatus = sub;
+                          });
+                        }
+                      },
+                      child: const Text(
+                        "SAVE & SYNC ACCESS",
+                        style: TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _openWhatsApp({String message = "Hello Purix Academy! I want to upgrade to PRO Access."}) async {
+    final cleanPhone = supportWhatsAppNumber.replaceAll('+', '').replaceAll(' ', '');
+    final uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}");
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Could not open WhatsApp. Please check if installed.")),
+        );
+      }
+    }
+  }
+
+  void _showPaymentDialog() {
+    const neonGold = Color(0xFFFFD700);
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          backgroundColor: const Color(0xFF0B111E),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: const BorderSide(color: neonGold, width: 1.5),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.workspace_premium, color: neonGold, size: 36),
+                const SizedBox(height: 10),
+                const Text(
+                  "UPGRADE TO PURIX PRO",
+                  style: TextStyle(color: neonGold, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Unlock All Chapter MCQs, Premium Notes & Practice Sets",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF101726),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                  child: Column(
+                    children: [
+                      const Text("PAY VIA UPI ID", style: TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace')),
+                      const SizedBox(height: 4),
+                      SelectableText(
+                        academyUPI,
+                        style: const TextStyle(color: neonGold, fontSize: 14, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                      ),
+                      const Divider(color: Colors.white12, height: 18),
+                      const Text(
+                        "After payment, share screenshot on WhatsApp to instantly activate full access.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.white60, fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onPressed: () {
+                      Navigator.pop(context);
+                      _openWhatsApp(message: "Hi Purix Academy, I want to activate PRO Pass for Cadet: $currentName ($currentClass).");
+                    },
+                    icon: const Icon(Icons.chat, color: Colors.white, size: 18),
+                    label: const Text("SEND SCREENSHOT ON WHATSAPP", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void _changeClass() async {
@@ -31,17 +307,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ClassScreen(
-          userName: widget.userName,
-          isChangingClass: true,
+          userName: currentName,
         ),
       ),
     );
 
     if (newClass != null && mounted) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_class', newClass);
+
       setState(() {
         currentClass = newClass;
       });
+
+      // क्लास बदलते ही Google Sheet को अपडेट करें
+      SheetService.syncUserProfile(
+        name: currentName,
+        phone: currentPhone,
+        email: currentEmail.isNotEmpty ? currentEmail : "N/A",
+        selectedClass: newClass,
+      );
     }
+  }
+
+  Future<void> _handleLogout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   void _openProfileSheet() {
@@ -62,24 +361,49 @@ class _DashboardScreenState extends State<DashboardScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               CircleAvatar(
-                radius: 36,
+                radius: 34,
                 backgroundColor: neonCyan.withValues(alpha: 0.15),
                 child: Text(
-                  widget.userName.isNotEmpty ? widget.userName[0].toUpperCase() : 'U',
-                  style: const TextStyle(fontSize: 28, color: neonCyan, fontWeight: FontWeight.bold),
+                  currentName.isNotEmpty ? currentName[0].toUpperCase() : 'U',
+                  style: const TextStyle(fontSize: 26, color: neonCyan, fontWeight: FontWeight.bold),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
-                widget.userName.toUpperCase(),
-                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                currentName.toUpperCase(),
+                style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2),
               ),
               const SizedBox(height: 4),
               Text(
-                'ACTIVE NODE: $currentClass',
-                style: const TextStyle(color: neonGreen, fontSize: 12, fontFamily: 'monospace'),
+                'NODE: $currentClass  |  STATUS: $subscriptionStatus',
+                style: const TextStyle(color: neonGreen, fontSize: 11, fontFamily: 'monospace'),
               ),
-              const SizedBox(height: 24),
+              if (currentPhone.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'PHONE: $currentPhone',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11, fontFamily: 'monospace'),
+                ),
+              ],
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101726),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.edit, color: neonCyan),
+                  title: const Text('Edit Cadet Details', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  subtitle: const Text('Update phone or name', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showProfileDialog(isMandatory: false);
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
               Container(
                 decoration: BoxDecoration(
                   color: const Color(0xFF101726),
@@ -88,8 +412,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 child: ListTile(
                   leading: const Icon(Icons.swap_horiz, color: neonCyan),
-                  title: const Text('Switch Target Class', style: TextStyle(color: Colors.white, fontSize: 14)),
-                  subtitle: const Text('Change syllabus & questions node', style: TextStyle(color: Colors.white54, fontSize: 11)),
+                  title: const Text('Switch Target Class', style: TextStyle(color: Colors.white, fontSize: 13)),
+                  subtitle: const Text('Change syllabus node', style: TextStyle(color: Colors.white54, fontSize: 11)),
                   trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                   onTap: () {
                     Navigator.pop(context);
@@ -98,6 +422,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
               ),
               const SizedBox(height: 10),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101726),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                ),
+                child: ListTile(
+                  leading: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+                  title: const Text('Terminate Session (Logout)', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                  trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleLogout();
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -109,10 +449,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     const neonCyan = Color(0xFF00F0FF);
     const neonGreen = Color(0xFF00FF66);
+    const neonGold = Color(0xFFFFD700);
     const darkVoid = Color(0xFF070B14);
 
     return Scaffold(
       backgroundColor: darkVoid,
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: const Color(0xFF25D366),
+        elevation: 6,
+        onPressed: () => _openWhatsApp(),
+        icon: const Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
+        label: const Text(
+          "HELP DESK",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12, letterSpacing: 1.1),
+        ),
+      ),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0A0F1D),
         elevation: 0,
@@ -132,7 +483,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  widget.userName.toUpperCase(),
+                  currentName.toUpperCase(),
                   style: const TextStyle(
                     fontSize: 14,
                     letterSpacing: 1.2,
@@ -164,7 +515,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 radius: 18,
                 backgroundColor: neonCyan.withValues(alpha: 0.15),
                 child: Text(
-                  widget.userName.isNotEmpty ? widget.userName[0].toUpperCase() : 'U',
+                  currentName.isNotEmpty ? currentName[0].toUpperCase() : 'U',
                   style: const TextStyle(color: neonCyan, fontWeight: FontWeight.bold, fontSize: 14),
                 ),
               ),
@@ -183,7 +534,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // अपडेटेड Purix Academy बैनर
+                // Top Purix Header Card
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -247,7 +598,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ],
                   ),
                 ),
-
                 const SizedBox(height: 20),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -274,7 +624,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
@@ -356,6 +705,102 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 24),
+
+                // खाली जगह को भरने वाला प्रीमियम PRO पास बैनर
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0D1424),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: neonGold.withValues(alpha: 0.5), width: 1.2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: neonGold.withValues(alpha: 0.08),
+                        blurRadius: 15,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Row(
+                            children: [
+                              Icon(Icons.workspace_premium, color: neonGold, size: 22),
+                              SizedBox(width: 8),
+                              Text(
+                                "PURIX PRO PASS",
+                                style: TextStyle(
+                                  color: neonGold,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: neonGold.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: neonGold.withValues(alpha: 0.5)),
+                            ),
+                            child: Text(
+                              subscriptionStatus == "PRO" ? "ACTIVE" : "UPGRADE",
+                              style: const TextStyle(
+                                color: neonGold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        subscriptionStatus == "PRO"
+                            ? "All premium tests, PDF assignments, and rapid revision notes are unlocked for your node."
+                            : "Unlock all locked tests, complete formula sheets, and chapter assignment banks.",
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 40,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: neonGold, width: 1.2),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            backgroundColor: neonGold.withValues(alpha: 0.05),
+                          ),
+                          onPressed: _showPaymentDialog,
+                          icon: const Icon(Icons.bolt, color: neonGold, size: 18),
+                          label: Text(
+                            subscriptionStatus == "PRO" ? "VIEW MEMBERSHIP PERKS" : "GET PRO ACCESS NOW",
+                            style: const TextStyle(
+                              color: neonGold,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 40),
               ],
             ),
           );

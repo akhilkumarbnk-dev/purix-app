@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/sheet_service.dart';
 
 class QuizScreen extends StatefulWidget {
   final String selectedClass;
@@ -19,37 +20,70 @@ class QuizScreen extends StatefulWidget {
 }
 
 class _QuizScreenState extends State<QuizScreen> {
-  // [याद रखें: यह टेस्टिंग डेटा है, बाद में Google Sheets कनेक्ट होते ही इसे हटाएंगे]
-  final List<Map<String, dynamic>> _questions = [
-    {
-      'question': 'विद्युत धारा (Electric Current) का SI मात्रक क्या है?',
-      'options': ['Ampere', 'Volt', 'Ohm', 'Watt'],
-      'answer': 'Ampere',
-    },
-    {
-      'question': 'पौधों में प्रकाश संश्लेषण (Photosynthesis) के दौरान कौन-सी गैस निकलती है?',
-      'options': ['Carbon Dioxide', 'Oxygen', 'Nitrogen', 'Hydrogen'],
-      'answer': 'Oxygen',
-    },
-    {
-      'question': 'जल का रासायनिक सूत्र (Chemical Formula) क्या है?',
-      'options': ['CO2', 'NaCl', 'H2O', 'CH4'],
-      'answer': 'H2O',
-    },
-  ];
-
+  bool _isLoading = true;
+  bool _isHindi = true; // भाषा टॉगल (हिंदी / English)
+  List<Map<String, dynamic>> _questions = [];
   int _currentIndex = 0;
-  String? _selectedOption;
+  String? _selectedOptionLetter; // 'A', 'B', 'C', 'D'
   int _score = 0;
   bool _answered = false;
 
-  void _checkAnswer(String option) {
-    if (_answered) return;
+  @override
+  void initState() {
+    super.initState();
+    _fetchQuestions();
+  }
+
+  String _getTargetSheetName() {
+    String prefix = "8th";
+    if (widget.selectedClass.contains("9")) {
+      prefix = "9th";
+    } else if (widget.selectedClass.contains("10")) {
+      prefix = "10th";
+    }
+    return '$prefix MCQ';
+  }
+
+  Future<void> _fetchQuestions() async {
+    setState(() => _isLoading = true);
+
+    final sheetName = _getTargetSheetName();
+    final data = await SheetService.fetchSheetData(sheetName);
+
+    // सब्जेक्ट और चैप्टर के आधार पर फ़िल्टर करना
+    final filtered = data.where((row) {
+      final rSub = (row['Subject'] ?? row['subject'] ?? '').toString().trim().toLowerCase();
+      final rChap = (row['Chapter'] ?? row['chapter'] ?? '').toString().trim().toLowerCase();
+      
+      final targetSub = widget.subject.trim().toLowerCase();
+      final targetChap = widget.chapter.trim().toLowerCase();
+
+      return (rSub == targetSub || targetSub.isEmpty) &&
+             (rChap == targetChap || targetChap.isEmpty);
+    }).toList();
+
+    // अगर बिल्कुल मैच न मिले तो उस शीट का सारा डेटा दिखा दें (सेफ़्टी फ़ॉलबैक)
+    final finalQuestions = filtered.isNotEmpty ? filtered : data;
+
+    if (mounted) {
+      setState(() {
+        _questions = finalQuestions;
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _checkAnswer(String optionLetter) {
+    if (_answered || _questions.isEmpty) return;
+
+    final correctAns = (_questions[_currentIndex]['Answer'] ?? 
+                        _questions[_currentIndex]['answer'] ?? 
+                        'A').toString().trim().toUpperCase();
 
     setState(() {
-      _selectedOption = option;
+      _selectedOptionLetter = optionLetter;
       _answered = true;
-      if (option == _questions[_currentIndex]['answer']) {
+      if (optionLetter.toUpperCase() == correctAns) {
         _score++;
       }
     });
@@ -59,7 +93,7 @@ class _QuizScreenState extends State<QuizScreen> {
     if (_currentIndex < _questions.length - 1) {
       setState(() {
         _currentIndex++;
-        _selectedOption = null;
+        _selectedOptionLetter = null;
         _answered = false;
       });
     } else {
@@ -80,11 +114,11 @@ class _QuizScreenState extends State<QuizScreen> {
           borderRadius: BorderRadius.circular(16),
           side: const BorderSide(color: neonCyan, width: 1.5),
         ),
-        title: Column(
+        title: const Column(
           children: [
-            const Icon(Icons.military_tech, color: neonGreen, size: 44),
-            const SizedBox(height: 8),
-            const Text(
+            Icon(Icons.military_tech, color: neonGreen, size: 44),
+            SizedBox(height: 8),
+            Text(
               '// SIMULATION COMPLETE',
               style: TextStyle(
                 fontSize: 12,
@@ -150,7 +184,7 @@ class _QuizScreenState extends State<QuizScreen> {
               Navigator.pop(context);
               setState(() {
                 _currentIndex = 0;
-                _selectedOption = null;
+                _selectedOptionLetter = null;
                 _answered = false;
                 _score = 0;
               });
@@ -168,9 +202,82 @@ class _QuizScreenState extends State<QuizScreen> {
     const neonCyan = Color(0xFF00F0FF);
     const neonGreen = Color(0xFF00FF66);
     const neonRed = Color(0xFFFF0055);
+    const neonGold = Color(0xFFFFD700);
+
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: darkVoid,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: neonCyan),
+              SizedBox(height: 16),
+              Text("LOADING QUESTIONS FROM NODE...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_questions.isEmpty) {
+      return Scaffold(
+        backgroundColor: darkVoid,
+        appBar: AppBar(backgroundColor: const Color(0xFF0A0F1D), elevation: 0),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: neonGold, size: 48),
+              const SizedBox(height: 12),
+              const Text("NO QUESTIONS FOUND", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text("Please check ${_getTargetSheetName()} in Google Sheets", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+            ],
+          ),
+        ),
+      );
+    }
 
     final currentQ = _questions[_currentIndex];
     final progress = (_currentIndex + 1) / _questions.length;
+
+    // शीट के कॉलम के अनुसार प्रश्न और विकल्प उठाना
+    final questionText = _isHindi
+        ? (currentQ['MCQ hin'] ?? currentQ['MCQ_hin'] ?? currentQ['MCQ eng'] ?? '').toString()
+        : (currentQ['MCQ eng'] ?? currentQ['MCQ_eng'] ?? currentQ['MCQ hin'] ?? '').toString();
+
+    final options = [
+      {
+        'letter': 'A',
+        'text': _isHindi
+            ? (currentQ['Option A hin'] ?? currentQ['Option_A_hin'] ?? currentQ['Option A eng'] ?? '').toString()
+            : (currentQ['Option A eng'] ?? currentQ['Option_A_eng'] ?? currentQ['Option A hin'] ?? '').toString(),
+      },
+      {
+        'letter': 'B',
+        'text': _isHindi
+            ? (currentQ['Option B hin'] ?? currentQ['Option_B_hin'] ?? currentQ['Option B eng'] ?? '').toString()
+            : (currentQ['Option B eng'] ?? currentQ['Option_B_eng'] ?? currentQ['Option B hin'] ?? '').toString(),
+      },
+      {
+        'letter': 'C',
+        'text': _isHindi
+            ? (currentQ['Option C hin'] ?? currentQ['Option_C_hin'] ?? currentQ['Option C eng'] ?? '').toString()
+            : (currentQ['Option C eng'] ?? currentQ['Option_C_eng'] ?? currentQ['Option C hin'] ?? '').toString(),
+      },
+      {
+        'letter': 'D',
+        'text': _isHindi
+            ? (currentQ['Option D hin'] ?? currentQ['Option_D_hin'] ?? currentQ['Option D eng'] ?? '').toString()
+            : (currentQ['Option D eng'] ?? currentQ['Option_D_eng'] ?? currentQ['Option D hin'] ?? '').toString(),
+      },
+    ];
+
+    final correctLetter = (currentQ['Answer'] ?? currentQ['answer'] ?? 'A').toString().trim().toUpperCase();
+    final explanation = _isHindi
+        ? (currentQ['Explanation hin'] ?? currentQ['Explanation_hin'] ?? '').toString()
+        : (currentQ['Explanation eng'] ?? currentQ['Explanation_eng'] ?? '').toString();
 
     return Scaffold(
       backgroundColor: darkVoid,
@@ -211,13 +318,32 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
           ],
         ),
+        actions: [
+          // भाषा टॉगल बटन (HIN / ENG)
+          Padding(
+            padding: const EdgeInsets.only(right: 12.0),
+            child: ActionChip(
+              backgroundColor: const Color(0xFF101726),
+              side: const BorderSide(color: neonCyan, width: 1),
+              label: Text(
+                _isHindi ? "HIN 🇮🇳" : "ENG 🌐",
+                style: const TextStyle(color: neonCyan, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              onPressed: () {
+                setState(() {
+                  _isHindi = !_isHindi;
+                });
+              },
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(18.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Linear Cyber Progress HUD
+            // Linear Progress HUD
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -254,7 +380,7 @@ class _QuizScreenState extends State<QuizScreen> {
             ),
             const SizedBox(height: 20),
 
-            // Question Container
+            // Question Box
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(18),
@@ -285,9 +411,9 @@ class _QuizScreenState extends State<QuizScreen> {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    currentQ['question'],
+                    questionText.isNotEmpty ? questionText : "Question text not available in selected language.",
                     style: const TextStyle(
-                      fontSize: 17,
+                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                       color: Colors.white,
                       height: 1.4,
@@ -296,15 +422,16 @@ class _QuizScreenState extends State<QuizScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 18),
 
             // Options List
             Expanded(
               child: ListView.builder(
-                itemCount: currentQ['options'].length,
+                itemCount: options.length,
                 itemBuilder: (context, index) {
-                  final option = currentQ['options'][index];
-                  final optionLetter = String.fromCharCode(65 + index); // A, B, C, D
+                  final opt = options[index];
+                  final letter = opt['letter']!;
+                  final text = opt['text']!;
 
                   Color cardBg = const Color(0xFF0B111E);
                   Color borderColor = Colors.white12;
@@ -312,12 +439,12 @@ class _QuizScreenState extends State<QuizScreen> {
                   Color badgeColor = neonCyan;
 
                   if (_answered) {
-                    if (option == currentQ['answer']) {
+                    if (letter == correctLetter) {
                       cardBg = neonGreen.withValues(alpha: 0.12);
                       borderColor = neonGreen;
                       badgeColor = neonGreen;
                       textColor = Colors.white;
-                    } else if (option == _selectedOption) {
+                    } else if (letter == _selectedOptionLetter) {
                       cardBg = neonRed.withValues(alpha: 0.12);
                       borderColor = neonRed;
                       badgeColor = neonRed;
@@ -326,28 +453,19 @@ class _QuizScreenState extends State<QuizScreen> {
                   }
 
                   return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
+                    margin: const EdgeInsets.only(bottom: 10),
                     decoration: BoxDecoration(
                       color: cardBg,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: borderColor, width: 1.2),
-                      boxShadow: _answered && (option == currentQ['answer'] || option == _selectedOption)
-                          ? [
-                              BoxShadow(
-                                color: (option == currentQ['answer'] ? neonGreen : neonRed).withValues(alpha: 0.2),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
-                              )
-                            ]
-                          : [],
                     ),
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () => _checkAnswer(option),
+                        onTap: () => _checkAnswer(letter),
                         borderRadius: BorderRadius.circular(12),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           child: Row(
                             children: [
                               Container(
@@ -360,7 +478,7 @@ class _QuizScreenState extends State<QuizScreen> {
                                   border: Border.all(color: badgeColor.withValues(alpha: 0.4)),
                                 ),
                                 child: Text(
-                                  optionLetter,
+                                  letter,
                                   style: TextStyle(
                                     color: badgeColor,
                                     fontSize: 12,
@@ -372,18 +490,18 @@ class _QuizScreenState extends State<QuizScreen> {
                               const SizedBox(width: 14),
                               Expanded(
                                 child: Text(
-                                  option,
+                                  text,
                                   style: TextStyle(
                                     color: textColor,
-                                    fontSize: 15,
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
                               ),
-                              if (_answered && option == currentQ['answer'])
-                                const Icon(Icons.check_circle_rounded, color: neonGreen, size: 22),
-                              if (_answered && option == _selectedOption && option != currentQ['answer'])
-                                const Icon(Icons.cancel_rounded, color: neonRed, size: 22),
+                              if (_answered && letter == correctLetter)
+                                const Icon(Icons.check_circle_rounded, color: neonGreen, size: 20),
+                              if (_answered && letter == _selectedOptionLetter && letter != correctLetter)
+                                const Icon(Icons.cancel_rounded, color: neonRed, size: 20),
                             ],
                           ),
                         ),
@@ -394,18 +512,52 @@ class _QuizScreenState extends State<QuizScreen> {
               ),
             ),
 
-            // Next / Finish Action Button
+            // Explanation Box
+            if (_answered && explanation.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF101726),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: neonGold.withValues(alpha: 0.4)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.lightbulb_outline, color: neonGold, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          "EXPLANATION / समाधान",
+                          style: TextStyle(color: neonGold, fontSize: 10, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      explanation,
+                      style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Next Question Button
             if (_answered)
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 46,
                 child: ElevatedButton(
                   onPressed: _nextQuestion,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: neonCyan.withValues(alpha: 0.2),
                     foregroundColor: neonCyan,
                     side: const BorderSide(color: neonCyan, width: 1.2),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     elevation: 0,
                   ),
                   child: Row(
@@ -413,7 +565,7 @@ class _QuizScreenState extends State<QuizScreen> {
                     children: [
                       Text(
                         _currentIndex == _questions.length - 1 ? 'TERMINATE SIMULATION' : 'PROCEED TO NEXT QUERY',
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, letterSpacing: 1.2, fontFamily: 'monospace'),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2, fontFamily: 'monospace'),
                       ),
                       const SizedBox(width: 8),
                       const Icon(Icons.arrow_forward, size: 16),

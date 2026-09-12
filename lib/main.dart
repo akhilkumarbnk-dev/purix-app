@@ -1,36 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/login_screen.dart';
+import 'screens/dashboard_screen.dart';
 
-void main() {
-  runApp(const PurixAcademyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+
+  final bool isLoggedIn = prefs.getBool('is_logged_in') ?? false;
+  final String? savedClass = prefs.getString('user_class');
+  final String? userName = prefs.getString('user_name');
+
+  runApp(PurixApp(
+    initialScreen: (isLoggedIn && savedClass != null)
+        ? DashboardScreen(selectedClass: savedClass, userName: userName ?? 'Student')
+        : const LoginScreen(),
+  ));
 }
 
-class PurixAcademyApp extends StatelessWidget {
-  const PurixAcademyApp({super.key});
+class PurixApp extends StatelessWidget {
+  final Widget initialScreen;
+  const PurixApp({super.key, required this.initialScreen});
 
   @override
   Widget build(BuildContext context) {
-    const darkVoid = Color(0xFF070B14);
-    const surfaceColor = Color(0xFF0B111E);
-    const neonCyan = Color(0xFF00F0FF);
-
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'Purix Academy',
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: darkVoid,
-        canvasColor: darkVoid,
-        bottomSheetTheme: const BottomSheetThemeData(
-          backgroundColor: surfaceColor,
-        ),
-        colorScheme: const ColorScheme.dark(
-          primary: neonCyan,
-          surface: surfaceColor,
-        ), dialogTheme: DialogThemeData(backgroundColor: surfaceColor),
-      ),
-      home: const LoginScreen(),
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(),
+      home: initialScreen,
     );
   }
 }

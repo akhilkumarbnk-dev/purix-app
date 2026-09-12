@@ -1,14 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'class_screen.dart';
 
 class LoginScreen extends StatelessWidget {
   const LoginScreen({super.key});
 
+  Future<void> _handleGoogleSignIn(BuildContext context) async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(scopes: ['email']);
+      final GoogleSignInAccount? account = await googleSignIn.signIn();
+
+      final userName = account?.displayName ?? 'Student';
+      final userEmail = account?.email ?? '';
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', userName);
+      await prefs.setString('user_email', userEmail);
+
+      if (!context.mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ClassScreen(userName: userName),
+        ),
+      );
+    } catch (error) {
+      // अगर साइन-इन कैंसिल हो या एरर आए, तो स्मूथ अनुभव के लिए आगे बढ़ने दें
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', 'Student');
+
+      if (!context.mounted) return;
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const ClassScreen(userName: 'Student'),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const darkVoid = Color(0xFF070B14);
+    const goldAccent = Color(0xFFD4AF37);
     const neonCyan = Color(0xFF00F0FF);
-    const neonGreen = Color(0xFF00FF66);
 
     return Scaffold(
       backgroundColor: darkVoid,
@@ -18,47 +56,46 @@ class LoginScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Alien Glowing Core Icon
+              // High-Definition Gold Logo
               Container(
-                padding: const EdgeInsets.all(20),
+                width: 140,
+                height: 140,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: neonCyan.withValues(alpha: 0.1),
-                  border: Border.all(color: neonCyan.withValues(alpha: 0.5), width: 1.5),
                   boxShadow: [
                     BoxShadow(
-                      color: neonCyan.withValues(alpha: 0.25),
-                      blurRadius: 25,
-                      spreadRadius: 2,
+                      color: goldAccent.withValues(alpha: 0.35),
+                      blurRadius: 30,
+                      spreadRadius: 4,
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.auto_awesome,
-                  size: 50,
-                  color: neonCyan,
+                child: ClipOval(
+                  child: Image.asset(
+                    'assets/logo.png',
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.high,
+                  ),
                 ),
               ),
               const SizedBox(height: 24),
-
-              // Title & Subtitle
               const Text(
                 'PURIX ACADEMY',
                 style: TextStyle(
                   fontSize: 26,
                   fontWeight: FontWeight.w900,
-                  color: Colors.white,
+                  color: goldAccent,
                   letterSpacing: 2,
                 ),
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 'NEW WAY OF LEARNING',
                 style: TextStyle(
                   fontSize: 12,
                   fontFamily: 'monospace',
                   letterSpacing: 2,
-                  color: neonGreen.withValues(alpha: 0.9),
+                  color: Colors.white.withValues(alpha: 0.8),
                   fontWeight: FontWeight.bold,
                 ),
               ),
@@ -73,8 +110,6 @@ class LoginScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 48),
-
-              // 100% High-Contrast "Continue with Google" Button
               Container(
                 width: double.infinity,
                 height: 52,
@@ -98,26 +133,14 @@ class LoginScreen extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  onPressed: () {
-                    // अभी के लिए डेमो लॉगिन: डायरेक्ट क्लास स्क्रीन पर ले जाएगा
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ClassScreen(userName: 'Student'),
-                      ),
-                    );
-                  },
+                  onPressed: () => _handleGoogleSignIn(context),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Google Logo / Icon
                       Container(
                         width: 24,
                         height: 24,
                         alignment: Alignment.center,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                        ),
                         child: const Text(
                           'G',
                           style: TextStyle(
@@ -141,9 +164,7 @@ class LoginScreen extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 20),
-
-              // Cyber Security Tagline
+              const SizedBox(height: 24),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
