@@ -28,7 +28,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String currentEmail = '';
   String subscriptionStatus = 'FREE';
 
-  // अकादमी हेल्पलाइन नंबर और UPI ID
   final String supportWhatsAppNumber = "919508774890"; 
   final String academyUPI = "6201161834@ptyes";
 
@@ -42,6 +41,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadUserDataAndCheckProfile() async {
     final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
     setState(() {
       currentPhone = prefs.getString('user_phone') ?? '';
       currentEmail = prefs.getString('user_email') ?? '';
@@ -49,10 +49,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       currentName = prefs.getString('user_name') ?? widget.userName;
     });
 
-    // अगर फोन नंबर नहीं मिला तो अनिवार्य प्रोफाइल डायलॉग खोलें
     if (currentPhone.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showProfileDialog(isMandatory: true);
+        if (mounted) {
+          _showProfileDialog(isMandatory: true);
+        }
       });
     }
   }
@@ -65,7 +66,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     showDialog(
       context: context,
       barrierDismissible: !isMandatory,
-      builder: (context) {
+      builder: (dialogContext) {
         return PopScope(
           canPop: !isMandatory,
           child: Dialog(
@@ -156,6 +157,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         final enteredPhone = phoneCtrl.text.trim();
 
                         if (enteredName.isEmpty || enteredPhone.isEmpty) {
+                          if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(content: Text("Please fill all details to proceed")),
                           );
@@ -166,15 +168,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         await prefs.setString('user_name', enteredName);
                         await prefs.setString('user_phone', enteredPhone);
 
+                        if (!mounted) return;
                         setState(() {
                           currentName = enteredName;
                           currentPhone = enteredPhone;
                         });
 
-                        if (!mounted) return;
-                        Navigator.pop(context);
+                        if (!dialogContext.mounted) return;
+                        Navigator.pop(dialogContext);
 
-                        // Google Sheets User ID टैब के साथ बैकग्राउंड सिंक
                         final sub = await SheetService.syncUserProfile(
                           name: enteredName,
                           phone: enteredPhone,
@@ -182,12 +184,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           selectedClass: currentClass,
                         );
 
+                        if (!mounted) return;
                         await prefs.setString('user_sub', sub);
-                        if (mounted) {
-                          setState(() {
-                            subscriptionStatus = sub;
-                          });
-                        }
+                        
+                        if (!mounted) return;
+                        setState(() {
+                          subscriptionStatus = sub;
+                        });
                       },
                       child: const Text(
                         "SAVE & SYNC ACCESS",
@@ -210,16 +213,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _openWhatsApp({String message = "Hello Purix Academy! I want to upgrade to PRO Access."}) async {
     final cleanPhone = supportWhatsAppNumber.replaceAll('+', '').replaceAll(' ', '');
-    final uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}");
+    final appUri = Uri.parse("whatsapp://send?phone=$cleanPhone&text=${Uri.encodeComponent(message)}");
+    final webUri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}");
 
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (mounted) {
+    try {
+      if (await canLaunchUrl(appUri)) {
+        await launchUrl(appUri);
+      } else if (await canLaunchUrl(webUri)) {
+        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      } else {
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Could not open WhatsApp. Please check if installed.")),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Error opening WhatsApp link.")),
+      );
     }
   }
 
@@ -228,7 +240,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return Dialog(
           backgroundColor: const Color(0xFF0B111E),
           shape: RoundedRectangleBorder(
@@ -248,7 +260,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  "Unlock All Chapter MCQs, Premium Notes & Practice Sets",
+                  "Unlock All Chapter MCQs, Premium Notes & Practice Sets @ ₹599",
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.white70, fontSize: 12),
                 ),
@@ -262,6 +274,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   child: Column(
                     children: [
+                      const Text("PAYMENT AMOUNT: ₹599", style: TextStyle(color: neonGold, fontSize: 12, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
                       const Text("PAY VIA UPI ID", style: TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace')),
                       const SizedBox(height: 4),
                       SelectableText(
@@ -270,7 +284,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       ),
                       const Divider(color: Colors.white12, height: 18),
                       const Text(
-                        "After payment, share screenshot on WhatsApp to instantly activate full access.",
+                        "After payment of ₹599, share screenshot on WhatsApp to instantly activate full access.",
                         textAlign: TextAlign.center,
                         style: TextStyle(color: Colors.white60, fontSize: 11),
                       ),
@@ -287,8 +301,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: () {
-                      Navigator.pop(context);
-                      _openWhatsApp(message: "Hi Purix Academy, I want to activate PRO Pass for Cadet: $currentName ($currentClass).");
+                      Navigator.pop(dialogContext);
+                      _openWhatsApp(message: "Hi Purix Academy, I have paid ₹599 for PRO Pass. Here is my screenshot for Cadet: $currentName ($currentClass).");
                     },
                     icon: const Icon(Icons.chat, color: Colors.white, size: 18),
                     label: const Text("SEND SCREENSHOT ON WHATSAPP", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
@@ -316,11 +330,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user_class', newClass);
 
+      if (!mounted) return;
       setState(() {
         currentClass = newClass;
       });
 
-      // क्लास बदलते ही Google Sheet को अपडेट करें
       SheetService.syncUserProfile(
         name: currentName,
         phone: currentPhone,
@@ -354,7 +368,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         side: BorderSide(color: neonCyan, width: 1.2),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return Container(
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -398,7 +412,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   subtitle: const Text('Update phone or name', style: TextStyle(color: Colors.white54, fontSize: 11)),
                   trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _showProfileDialog(isMandatory: false);
                   },
                 ),
@@ -416,7 +430,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   subtitle: const Text('Change syllabus node', style: TextStyle(color: Colors.white54, fontSize: 11)),
                   trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _changeClass();
                   },
                 ),
@@ -433,7 +447,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   title: const Text('Terminate Session (Logout)', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
                   trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white38, size: 14),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
                     _handleLogout();
                   },
                 ),
@@ -534,7 +548,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Purix Header Card
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
@@ -599,29 +612,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'CORE MODULES',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.8,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                    Text(
-                      isWideScreen ? '// DESKTOP MATRIX [1x4]' : '// MOBILE ARRAY [2x2]',
-                      style: TextStyle(
-                        color: neonCyan.withValues(alpha: 0.6),
-                        fontSize: 10,
-                        letterSpacing: 1.2,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ],
+                const Text(
+                  'CORE MODULES',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.8,
+                    fontFamily: 'monospace',
+                  ),
                 ),
                 const SizedBox(height: 14),
                 GridView.count(
@@ -706,8 +705,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-
-                // खाली जगह को भरने वाला प्रीमियम PRO पास बैनर
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(18),
@@ -734,7 +731,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               Icon(Icons.workspace_premium, color: neonGold, size: 22),
                               SizedBox(width: 8),
                               Text(
-                                "PURIX PRO PASS",
+                                "PURIX PRO PASS (₹599)",
                                 style: TextStyle(
                                   color: neonGold,
                                   fontSize: 14,
@@ -767,7 +764,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       Text(
                         subscriptionStatus == "PRO"
                             ? "All premium tests, PDF assignments, and rapid revision notes are unlocked for your node."
-                            : "Unlock all locked tests, complete formula sheets, and chapter assignment banks.",
+                            : "Unlock all locked tests, complete formula sheets, and chapter assignment banks at just ₹599.",
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.75),
                           fontSize: 11,
@@ -787,7 +784,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           onPressed: _showPaymentDialog,
                           icon: const Icon(Icons.bolt, color: neonGold, size: 18),
                           label: Text(
-                            subscriptionStatus == "PRO" ? "VIEW MEMBERSHIP PERKS" : "GET PRO ACCESS NOW",
+                            subscriptionStatus == "PRO" ? "VIEW MEMBERSHIP PERKS" : "GET PRO ACCESS NOW (₹599)",
                             style: const TextStyle(
                               color: neonGold,
                               fontSize: 12,

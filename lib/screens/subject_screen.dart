@@ -31,7 +31,6 @@ class _SubjectScreenState extends State<SubjectScreen> {
   }
 
   String _getTargetSheetName() {
-    // क्लास नाम को साफ करके "8th", "9th", "10th" में बदलना
     String prefix = "8th";
     if (widget.selectedClass.contains("9")) {
       prefix = "9th";
@@ -49,15 +48,19 @@ class _SubjectScreenState extends State<SubjectScreen> {
   }
 
   Future<void> _loadInitialData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     final prefs = await SharedPreferences.getInstance();
-    _userSubscription = prefs.getString('user_sub') ?? 'FREE';
+    if (!mounted) return;
+    
+    setState(() {
+      _userSubscription = prefs.getString('user_sub') ?? 'FREE';
+    });
 
     final targetSheet = _getTargetSheetName();
     final data = await SheetService.fetchSheetData(targetSheet);
 
-    // Subject के आधार पर डेटा ग्रुप करना
     final Map<String, List<Map<String, dynamic>>> grouped = {};
     for (var row in data) {
       final subject = (row['Subject'] ?? row['subject'] ?? 'General').toString().trim();
@@ -69,17 +72,16 @@ class _SubjectScreenState extends State<SubjectScreen> {
       }
     }
 
-    if (mounted) {
-      setState(() {
-        
-        _groupedData = grouped;
-        _isLoading = false;
-      });
-    }
+    if (!mounted) return;
+    setState(() {
+      _groupedData = grouped;
+      _isLoading = false;
+    });
   }
 
   void _openPdfLink(String url) async {
     if (url.trim().isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Resource link not available.")),
       );
@@ -90,18 +92,17 @@ class _SubjectScreenState extends State<SubjectScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Unable to open resource link.")),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Unable to open resource link.")),
+      );
     }
   }
 
   void _showLockAlert() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: const Color(0xFF0B111E),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -123,7 +124,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text("CLOSE", style: TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
@@ -132,8 +133,8 @@ class _SubjectScreenState extends State<SubjectScreen> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context); // डैशबोर्ड पर वापस जाकर अपग्रेड कर सकते हैं
+              Navigator.pop(dialogContext);
+              Navigator.pop(context); 
             },
             child: const Text("VIEW PRO PASS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
           ),
@@ -188,7 +189,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                 children: [
                   CircularProgressIndicator(color: neonCyan),
                   SizedBox(height: 16),
-                  Text("FETCHING CURRICULUM NODE...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
+                  Text("Loading curriculum data...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
                 ],
               ),
             )
@@ -199,7 +200,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.layers_clear_outlined, color: Colors.white.withValues(alpha: 0.3), size: 48),
+                        Icon(Icons.layers_clear_outlined, color: Colors.white38, size: 48),
                         const SizedBox(height: 12),
                         const Text(
                           "NO DATA LOADED YET",
@@ -347,7 +348,6 @@ class _SubjectScreenState extends State<SubjectScreen> {
                                       child: const Text("START", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
                                     )
                                   else ...[
-                                    // Notes & Practice Links
                                     IconButton(
                                       tooltip: "Open Resource",
                                       icon: Icon(
