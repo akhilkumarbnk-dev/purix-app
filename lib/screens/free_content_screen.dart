@@ -1,113 +1,150 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../services/sheet_service.dart';
 
-class FreeContentScreen extends StatelessWidget {
+class FreeContentScreen extends StatefulWidget {
   final String selectedClass;
 
   const FreeContentScreen({super.key, required this.selectedClass});
 
-  // डेमो बोर्ड फ्री मटीरियल (बाद में Google Sheet से लिंक होगा)
-  final List<Map<String, dynamic>> freeCategories = const [
-    {
-      'title': 'Board Previous Year Papers (PYQs)',
-      'subtitle': 'Last 5 years solved papers with marking scheme',
-      'icon': Icons.history_edu,
-      'color': Colors.redAccent,
-      'items': [
-        {'name': 'Science Solved Board Paper (2024)', 'pages': '18 Pages'},
-        {'name': 'Mathematics Solved Board Paper (2024)', 'pages': '22 Pages'},
-        {'name': 'Social Science Solved Board Paper (2023)', 'pages': '20 Pages'},
-      ],
-    },
-    {
-      'title': 'Syllabus & Exam Blueprint',
-      'subtitle': 'Chapter-wise marks distribution & deleted topics',
-      'icon': Icons.assignment_turned_in,
-      'color': Colors.blue,
-      'items': [
-        {'name': 'Complete Board Science Blueprint', 'pages': '6 Pages'},
-        {'name': 'Mathematics Unit-wise Marks Scheme', 'pages': '5 Pages'},
-      ],
-    },
-    {
-      'title': 'Formula Sheets & Quick Maps',
-      'subtitle': 'Key definitions, formulas and reaction charts',
-      'icon': Icons.menu_book,
-      'color': Colors.amber,
-      'items': [
-        {'name': 'All Chemical Reactions & Formula Sheet', 'pages': '8 Pages'},
-        {'name': 'Maths Important Theorems & Identities', 'pages': '10 Pages'},
-      ],
-    },
-    {
-      'title': 'Model / Sample Guess Papers',
-      'subtitle': 'Purix special practice sets based on new board pattern',
-      'icon': Icons.description,
-      'color': Colors.green,
-      'items': [
-        {'name': 'Science Sample Paper 1 (Solved)', 'pages': '14 Pages'},
-        {'name': 'Maths Standard Sample Paper 1 (Solved)', 'pages': '16 Pages'},
-      ],
-    },
-  ];
+  @override
+  State<FreeContentScreen> createState() => _FreeContentScreenState();
+}
+
+class _FreeContentScreenState extends State<FreeContentScreen> {
+  List<dynamic> _freeItems = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFreeContent();
+  }
+
+  Future<void> _fetchFreeContent() async {
+    try {
+      final sheetName = "${widget.selectedClass.replaceAll('Class ', '')} Notes";
+      final data = await SheetService.fetchSheetData(sheetName);
+
+      final freeFiltered = data.where((item) {
+        final access = (item['Access Type'] ?? item['Is-free'] ?? item['is_free'] ?? '').toString().trim();
+        return access.toUpperCase() == 'FREE';
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _freeItems = freeFiltered;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _openPdf(String url) async {
+    if (url.isEmpty || url == 'N/A') {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('PDF link not available.')),
+      );
+      return;
+    }
+
+    String finalUrl = url;
+    if (url.contains('drive.google.com') && url.contains('/view')) {
+      finalUrl = finalUrl.replaceAll('/view?usp=sharing', '/preview').replaceAll('/view', '/preview');
+    }
+
+    final uri = Uri.parse(finalUrl);
+    try {
+      final launched = await canLaunchUrl(uri);
+      if (!mounted) return;
+
+      if (launched) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open PDF link.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error opening PDF.')),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    const neonCyan = Color(0xFF00F0FF);
+    const darkVoid = Color(0xFF070B14);
+
     return Scaffold(
+      backgroundColor: darkVoid,
       appBar: AppBar(
-        title: Text('$selectedClass - Free Content', style: const TextStyle(color: Colors.white, fontSize: 17)),
-        backgroundColor: Colors.deepPurple,
+        title: Text('${widget.selectedClass} - Free Matrix', style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        backgroundColor: const Color(0xFF0A0F1D),
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: freeCategories.length,
-        itemBuilder: (context, catIndex) {
-          final category = freeCategories[catIndex];
-          final items = category['items'] as List<Map<String, String>>;
-
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.only(bottom: 16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            child: ExpansionTile(
-              leading: CircleAvatar(
-                backgroundColor: (category['color'] as Color).withValues(alpha: 0.15),
-                child: Icon(category['icon'] as IconData, color: category['color'] as Color),
-              ),
-              title: Text(
-                category['title'] as String,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-              subtitle: Text(
-                category['subtitle'] as String,
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              children: items.map((doc) {
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-                  leading: const Icon(Icons.picture_as_pdf, size: 22, color: Colors.redAccent),
-                  title: Text(doc['name']!, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                  subtitle: Text(doc['pages']!, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                  trailing: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    ),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Opening PDF: ${doc['name']}')),
-                      );
-                    },
-                    child: const Text('View PDF', style: TextStyle(fontSize: 11)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(color: neonCyan))
+          : _freeItems.isEmpty
+              ? const Center(
+                  child: Text(
+                    'No Free Content Available Yet.',
+                    style: TextStyle(color: Colors.white70, fontSize: 13, fontFamily: 'monospace'),
                   ),
-                );
-              }).toList(),
-            ),
-          );
-        },
-      ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _freeItems.length,
+                  itemBuilder: (context, index) {
+                    final item = _freeItems[index];
+                    final chapterName = item['Chapter'] ?? item['chapter'] ?? 'Free Resource';
+                    final subjectName = item['Subject'] ?? item['subject'] ?? 'General';
+                    final pdfLink = item['Drive-link-hin'] ?? item['Drive-link-eng'] ?? '';
+
+                    return Card(
+                      color: const Color(0xFF0B111E),
+                      elevation: 3,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: neonCyan.withValues(alpha: 0.3), width: 1),
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.redAccent,
+                          child: Icon(Icons.picture_as_pdf, color: Colors.white, size: 20),
+                        ),
+                        title: Text(
+                          chapterName,
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          'Subject: $subjectName (FREE ACCESS)',
+                          style: TextStyle(color: neonCyan.withValues(alpha: 0.8), fontSize: 11, fontFamily: 'monospace'),
+                        ),
+                        trailing: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: neonCyan,
+                            foregroundColor: Colors.black,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          ),
+                          onPressed: () => _openPdf(pdfLink),
+                          child: const Text('View PDF', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }

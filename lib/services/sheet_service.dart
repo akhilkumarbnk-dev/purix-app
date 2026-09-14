@@ -3,10 +3,8 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 class SheetService {
-  // यहाँ अपना Apps Script Web App URL पेस्ट करें
   static const String scriptUrl = "https://script.google.com/macros/s/AKfycbw9fnOUZctZAL4LVRxBhwvgO73Fk9hgiePU-JPirloNSBjUgK6j5Dh8X48fG0lEXHvx/exec";
 
-  // Google Sheet से डेटा लाने के लिए (MCQ, Notes, Practice)
   static Future<List<Map<String, dynamic>>> fetchSheetData(String sheetName) async {
     try {
       final uri = Uri.parse('$scriptUrl?sheet=${Uri.encodeComponent(sheetName)}');
@@ -24,7 +22,6 @@ class SheetService {
     }
   }
 
-  // यूज़र प्रोफ़ाइल को User ID टैब में सिंक करने के लिए
   static Future<String> syncUserProfile({
     required String name,
     required String phone,

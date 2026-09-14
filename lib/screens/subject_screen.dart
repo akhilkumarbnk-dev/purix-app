@@ -21,6 +21,7 @@ class SubjectScreen extends StatefulWidget {
 class _SubjectScreenState extends State<SubjectScreen> {
   bool _isLoading = true;
   String _userSubscription = 'FREE';
+  bool _isHindiLanguage = false; // हिंदी/इंग्लिश टॉगल स्टेट
 
   Map<String, List<Map<String, dynamic>>> _groupedData = {};
 
@@ -80,7 +81,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
   }
 
   void _openPdfLink(String url) async {
-    if (url.trim().isEmpty) {
+    if (url.trim().isEmpty || url.trim() == 'N/A') {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Resource link not available.")),
@@ -88,13 +89,26 @@ class _SubjectScreenState extends State<SubjectScreen> {
       return;
     }
 
-    final uri = Uri.parse(url.trim());
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
+    // Google Drive direct preview formatting safeguard to prevent "unable to open link" error
+    String finalUrl = url.trim();
+    if (finalUrl.contains('drive.google.com') && finalUrl.contains('/view')) {
+      finalUrl = finalUrl.replaceAll('/view?usp=sharing', '/preview').replaceAll('/view', '/preview');
+    }
+
+    final uri = Uri.parse(finalUrl);
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Unable to open resource link.")),
+        );
+      }
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Unable to open resource link.")),
+        const SnackBar(content: Text("Error opening resource link.")),
       );
     }
   }
@@ -176,10 +190,36 @@ class _SubjectScreenState extends State<SubjectScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2),
         ),
         actions: [
+          // हिंदी / इंग्लिश टॉगल और रिफ्रेश बटन
+          InkWell(
+            onTap: () {
+              setState(() {
+                _isHindiLanguage = !_isHindiLanguage;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(_isHindiLanguage ? "Language switched to HINDI" : "Language switched to ENGLISH")),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              margin: const EdgeInsets.symmetric(vertical: 12),
+              decoration: BoxDecoration(
+                color: neonCyan.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: neonCyan),
+              ),
+              child: Text(
+                _isHindiLanguage ? "HIN" : "ENG",
+                style: const TextStyle(color: neonCyan, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.refresh, color: neonCyan),
             onPressed: _loadInitialData,
           ),
+          const SizedBox(width: 8),
         ],
       ),
       body: _isLoading
@@ -200,7 +240,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.layers_clear_outlined, color: Colors.white38, size: 48),
+                        const Icon(Icons.layers_clear_outlined, color: Colors.white38, size: 48),
                         const SizedBox(height: 12),
                         const Text(
                           "NO DATA LOADED YET",
@@ -261,13 +301,16 @@ class _SubjectScreenState extends State<SubjectScreen> {
                             style: TextStyle(color: themeGlow.withValues(alpha: 0.7), fontSize: 10, fontFamily: 'monospace'),
                           ),
                           children: items.map((item) {
-                            final accessType = (item['Access_Type'] ?? item['access_type'] ?? 'FREE').toString().toUpperCase().trim();
+                            final accessType = (item['Access Type'] ?? item['Access_Type'] ?? item['access_type'] ?? 'FREE').toString().toUpperCase().trim();
                             final isItemFree = accessType == 'FREE';
                             final hasAccess = isItemFree || _userSubscription == 'PRO';
 
                             final chapterName = item['Chapter'] ?? item['chapter'] ?? 'Chapter';
-                            final titleHin = item['Title-hin'] ?? item['Title_hin'] ?? item['Set Name-hin'] ?? item['MCQ hin'] ?? '';
-                            final titleEng = item['Title-eng'] ?? item['Title_eng'] ?? item['Set-name-eng'] ?? item['MCQ eng'] ?? '';
+                            
+                            // भाषा के आधार पर सही लिंक और टाइटल चुनें
+                            final pdfLinkHin = item['Drive-link-hin'] ?? item['Drive_link_hin'] ?? '';
+                            final pdfLinkEng = item['Drive-link-eng'] ?? item['Drive_link_eng'] ?? '';
+                            final selectedPdfLink = _isHindiLanguage ? (pdfLinkHin.isNotEmpty ? pdfLinkHin : pdfLinkEng) : (pdfLinkEng.isNotEmpty ? pdfLinkEng : pdfLinkHin);
 
                             return Container(
                               margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -287,15 +330,6 @@ class _SubjectScreenState extends State<SubjectScreen> {
                                           chapterName,
                                           style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
                                         ),
-                                        if (titleEng.isNotEmpty || titleHin.isNotEmpty) ...[
-                                          const SizedBox(height: 3),
-                                          Text(
-                                            titleEng.isNotEmpty ? titleEng : titleHin,
-                                            style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 11),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
                                         const SizedBox(height: 4),
                                         Row(
                                           children: [
@@ -356,15 +390,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                                         size: 22,
                                       ),
                                       onPressed: () {
-                                        final link = (item['Drive-link-eng'] ??
-                                                item['Drive_link_eng'] ??
-                                                item['Drive-link-hin'] ??
-                                                item['Drive_link_hin'] ??
-                                                item['Question-pdf-link'] ??
-                                                item['Question_pdf_link'] ??
-                                                '')
-                                            .toString();
-                                        _openPdfLink(link);
+                                        _openPdfLink(selectedPdfLink);
                                       },
                                     ),
                                   ],

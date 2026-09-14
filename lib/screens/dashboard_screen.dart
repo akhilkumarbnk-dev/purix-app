@@ -49,7 +49,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       currentName = prefs.getString('user_name') ?? widget.userName;
     });
 
-    if (currentPhone.isEmpty) {
+    if (currentPhone.isEmpty || currentName.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           _showProfileDialog(isMandatory: true);
@@ -98,7 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    "Enter your valid details to activate your student node and test access.",
+                    "Strict Validation: Valid Name and 10-digit WhatsApp/Mobile Number are mandatory to access modules.",
                     style: TextStyle(color: Colors.white70, fontSize: 11),
                   ),
                   const SizedBox(height: 18),
@@ -106,7 +106,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     controller: nameCtrl,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
-                      labelText: "Cadet Name",
+                      labelText: "Cadet Name (Mandatory)",
                       labelStyle: const TextStyle(color: Colors.white54, fontSize: 13),
                       prefixIcon: const Icon(Icons.person, color: neonGold, size: 20),
                       filled: true,
@@ -127,7 +127,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     keyboardType: TextInputType.phone,
                     style: const TextStyle(color: Colors.white, fontSize: 14),
                     decoration: InputDecoration(
-                      labelText: "WhatsApp / Mobile Number",
+                      labelText: "WhatsApp / Mobile Number (10 Digits)",
                       labelStyle: const TextStyle(color: Colors.white54, fontSize: 13),
                       prefixIcon: const Icon(Icons.phone, color: neonGold, size: 20),
                       filled: true,
@@ -156,10 +156,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         final enteredName = nameCtrl.text.trim();
                         final enteredPhone = phoneCtrl.text.trim();
 
-                        if (enteredName.isEmpty || enteredPhone.isEmpty) {
+                        // Strict Validation checks
+                        if (enteredName.isEmpty || enteredPhone.length < 10) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text("Please fill all details to proceed")),
+                            const SnackBar(content: Text("Error: Please enter a valid name and a 10-digit mobile number.")),
                           );
                           return;
                         }
@@ -213,14 +214,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   void _openWhatsApp({String message = "Hello Purix Academy! I want to upgrade to PRO Access."}) async {
     final cleanPhone = supportWhatsAppNumber.replaceAll('+', '').replaceAll(' ', '');
-    final appUri = Uri.parse("whatsapp://send?phone=$cleanPhone&text=${Uri.encodeComponent(message)}");
-    final webUri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}");
+    // Using universal web link format with external application launch mode to fix link opening errors on mobile devices
+    final uri = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(message)}");
 
     try {
-      if (await canLaunchUrl(appUri)) {
-        await launchUrl(appUri);
-      } else if (await canLaunchUrl(webUri)) {
-        await launchUrl(webUri, mode: LaunchMode.externalApplication);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
