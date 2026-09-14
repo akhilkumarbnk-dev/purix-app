@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../services/sheet_service.dart';
-import 'quiz_screen.dart';
+import 'sub_subject_screen.dart';
 
 class SubjectScreen extends StatefulWidget {
   final String selectedClass;
@@ -21,9 +20,7 @@ class SubjectScreen extends StatefulWidget {
 class _SubjectScreenState extends State<SubjectScreen> {
   bool _isLoading = true;
   String _userSubscription = 'FREE';
-  bool _isHindiLanguage = false; // हिंदी/इंग्लिश टॉगल स्टेट
-
-  Map<String, List<Map<String, dynamic>>> _groupedData = {};
+  List<String> _subjectsList = [];
 
   @override
   void initState() {
@@ -62,99 +59,20 @@ class _SubjectScreenState extends State<SubjectScreen> {
     final targetSheet = _getTargetSheetName();
     final data = await SheetService.fetchSheetData(targetSheet);
 
-    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    // केवल यूनिक (Unique) सब्जेक्ट्स की लिस्ट बनाएं ताकि एक सब्जेक्ट बार-बार न दोहराए
+    final Set<String> uniqueSubjects = {};
     for (var row in data) {
-      final subject = (row['Subject'] ?? row['subject'] ?? 'General').toString().trim();
+      final subject = (row['Subject'] ?? row['subject'] ?? '').toString().trim();
       if (subject.isNotEmpty) {
-        if (!grouped.containsKey(subject)) {
-          grouped[subject] = [];
-        }
-        grouped[subject]!.add(row);
+        uniqueSubjects.add(subject);
       }
     }
 
     if (!mounted) return;
     setState(() {
-      _groupedData = grouped;
+      _subjectsList = uniqueSubjects.toList();
       _isLoading = false;
     });
-  }
-
-  void _openPdfLink(String url) async {
-    if (url.trim().isEmpty || url.trim() == 'N/A') {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Resource link not available.")),
-      );
-      return;
-    }
-
-    // Google Drive direct preview formatting safeguard to prevent "unable to open link" error
-    String finalUrl = url.trim();
-    if (finalUrl.contains('drive.google.com') && finalUrl.contains('/view')) {
-      finalUrl = finalUrl.replaceAll('/view?usp=sharing', '/preview').replaceAll('/view', '/preview');
-    }
-
-    final uri = Uri.parse(finalUrl);
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Unable to open resource link.")),
-        );
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Error opening resource link.")),
-      );
-    }
-  }
-
-  void _showLockAlert() {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF0B111E),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: const BorderSide(color: Color(0xFFFFD700), width: 1.2),
-        ),
-        title: const Row(
-          children: [
-            Icon(Icons.lock, color: Color(0xFFFFD700), size: 22),
-            SizedBox(width: 8),
-            Text(
-              "PRO MODULE LOCKED",
-              style: TextStyle(color: Color(0xFFFFD700), fontSize: 15, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-        content: const Text(
-          "This study asset is part of the Purix Pro Pass. Upgrade your account or contact support on WhatsApp to unlock complete access.",
-          style: TextStyle(color: Colors.white70, fontSize: 12),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text("CLOSE", style: TextStyle(color: Colors.white54)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFFFD700),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              Navigator.pop(context); 
-            },
-            child: const Text("VIEW PRO PASS", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -163,9 +81,8 @@ class _SubjectScreenState extends State<SubjectScreen> {
     const cardBg = Color(0xFF0B111E);
     const neonCyan = Color(0xFF00F0FF);
     const neonGreen = Color(0xFF00FF66);
-    const neonGold = Color(0xFFFFD700);
 
-    String titleText = "${widget.selectedClass} - Modules";
+    String titleText = "${widget.selectedClass} - Subjects";
     Color themeGlow = neonGreen;
 
     if (widget.mode == 'mcq') {
@@ -190,31 +107,6 @@ class _SubjectScreenState extends State<SubjectScreen> {
           style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.2),
         ),
         actions: [
-          // हिंदी / इंग्लिश टॉगल और रिफ्रेश बटन
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isHindiLanguage = !_isHindiLanguage;
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(_isHindiLanguage ? "Language switched to HINDI" : "Language switched to ENGLISH")),
-              );
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              margin: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: neonCyan.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: neonCyan),
-              ),
-              child: Text(
-                _isHindiLanguage ? "HIN" : "ENG",
-                style: const TextStyle(color: neonCyan, fontSize: 11, fontWeight: FontWeight.bold, fontFamily: 'monospace'),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
           IconButton(
             icon: const Icon(Icons.refresh, color: neonCyan),
             onPressed: _loadInitialData,
@@ -229,11 +121,11 @@ class _SubjectScreenState extends State<SubjectScreen> {
                 children: [
                   CircularProgressIndicator(color: neonCyan),
                   SizedBox(height: 16),
-                  Text("Loading curriculum data...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
+                  Text("Loading subjects...", style: TextStyle(color: neonCyan, fontFamily: 'monospace', fontSize: 12)),
                 ],
               ),
             )
-          : _groupedData.isEmpty
+          : _subjectsList.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.all(24),
@@ -243,7 +135,7 @@ class _SubjectScreenState extends State<SubjectScreen> {
                         const Icon(Icons.layers_clear_outlined, color: Colors.white38, size: 48),
                         const SizedBox(height: 12),
                         const Text(
-                          "NO DATA LOADED YET",
+                          "NO SUBJECTS FOUND",
                           style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.2),
                         ),
                         const SizedBox(height: 6),
@@ -252,23 +144,15 @@ class _SubjectScreenState extends State<SubjectScreen> {
                           textAlign: TextAlign.center,
                           style: const TextStyle(color: Colors.white38, fontSize: 11, fontFamily: 'monospace'),
                         ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF101726)),
-                          onPressed: _loadInitialData,
-                          icon: const Icon(Icons.refresh, size: 16, color: neonCyan),
-                          label: const Text("RETRY CONNECTION", style: TextStyle(color: neonCyan, fontSize: 12)),
-                        ),
                       ],
                     ),
                   ),
                 )
               : ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  itemCount: _groupedData.keys.length,
+                  itemCount: _subjectsList.length,
                   itemBuilder: (context, index) {
-                    final subject = _groupedData.keys.elementAt(index);
-                    final items = _groupedData[subject]!;
+                    final subject = _subjectsList[index];
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 14),
@@ -277,128 +161,42 @@ class _SubjectScreenState extends State<SubjectScreen> {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: themeGlow.withValues(alpha: 0.3), width: 1.2),
                       ),
-                      child: Theme(
-                        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          leading: CircleAvatar(
-                            backgroundColor: themeGlow.withValues(alpha: 0.12),
-                            child: Icon(
-                              widget.mode == 'mcq'
-                                  ? Icons.quiz
-                                  : widget.mode == 'notes'
-                                      ? Icons.menu_book
-                                      : Icons.hub,
-                              color: themeGlow,
-                              size: 20,
-                            ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        leading: CircleAvatar(
+                          backgroundColor: themeGlow.withValues(alpha: 0.12),
+                          child: Icon(
+                            widget.mode == 'mcq'
+                                ? Icons.quiz
+                                : widget.mode == 'notes'
+                                    ? Icons.menu_book
+                                    : Icons.hub,
+                            color: themeGlow,
+                            size: 20,
                           ),
-                          title: Text(
-                            subject.toUpperCase(),
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.1),
-                          ),
-                          subtitle: Text(
-                            "${items.length} MODULES READY",
-                            style: TextStyle(color: themeGlow.withValues(alpha: 0.7), fontSize: 10, fontFamily: 'monospace'),
-                          ),
-                          children: items.map((item) {
-                            final accessType = (item['Access Type'] ?? item['Access_Type'] ?? item['access_type'] ?? 'FREE').toString().toUpperCase().trim();
-                            final isItemFree = accessType == 'FREE';
-                            final hasAccess = isItemFree || _userSubscription == 'PRO';
-
-                            final chapterName = item['Chapter'] ?? item['chapter'] ?? 'Chapter';
-                            
-                            // भाषा के आधार पर सही लिंक और टाइटल चुनें
-                            final pdfLinkHin = item['Drive-link-hin'] ?? item['Drive_link_hin'] ?? '';
-                            final pdfLinkEng = item['Drive-link-eng'] ?? item['Drive_link_eng'] ?? '';
-                            final selectedPdfLink = _isHindiLanguage ? (pdfLinkHin.isNotEmpty ? pdfLinkHin : pdfLinkEng) : (pdfLinkEng.isNotEmpty ? pdfLinkEng : pdfLinkHin);
-
-                            return Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF101726),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.white12),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          chapterName,
-                                          style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          children: [
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                              decoration: BoxDecoration(
-                                                color: isItemFree ? neonGreen.withValues(alpha: 0.15) : neonGold.withValues(alpha: 0.15),
-                                                borderRadius: BorderRadius.circular(4),
-                                              ),
-                                              child: Text(
-                                                isItemFree ? "FREE" : "PRO ONLY",
-                                                style: TextStyle(
-                                                  color: isItemFree ? neonGreen : neonGold,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontFamily: 'monospace',
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (!hasAccess)
-                                    IconButton(
-                                      icon: const Icon(Icons.lock, color: neonGold, size: 20),
-                                      onPressed: _showLockAlert,
-                                    )
-                                  else if (widget.mode == 'mcq')
-                                    ElevatedButton(
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: neonGreen,
-                                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                                      ),
-                                      onPressed: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (context) => QuizScreen(
-                                              selectedClass: widget.selectedClass,
-                                              subject: subject,
-                                              chapter: chapterName,
-                                              quizSetNumber: 1,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                      child: const Text("START", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 11)),
-                                    )
-                                  else ...[
-                                    IconButton(
-                                      tooltip: "Open Resource",
-                                      icon: Icon(
-                                        widget.mode == 'notes' ? Icons.menu_book : Icons.picture_as_pdf,
-                                        color: neonCyan,
-                                        size: 22,
-                                      ),
-                                      onPressed: () {
-                                        _openPdfLink(selectedPdfLink);
-                                      },
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            );
-                          }).toList(),
                         ),
+                        title: Text(
+                          subject.toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 1.1),
+                        ),
+                        subtitle: Text(
+                          "Tap to view chapters & topics",
+                          style: TextStyle(color: themeGlow.withValues(alpha: 0.7), fontSize: 10, fontFamily: 'monospace'),
+                        ),
+                        trailing: const Icon(Icons.arrow_forward_ios, color: Colors.white54, size: 16),
+                        onTap: () {
+                          // सब्जेक्ट पर क्लिक करते ही यूजर SubSubjectScreen पर चला जाएगा
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => SubSubjectScreen(
+                                className: widget.selectedClass,
+                                subjectName: subject,
+                                mode: widget.mode,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     );
                   },

@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 class SheetService {
-  static const String scriptUrl = "https://script.google.com/macros/s/AKfycbw9fnOUZctZAL4LVRxBhwvgO73Fk9hgiePU-JPirloNSBjUgK6j5Dh8X48fG0lEXHvx/exec";
+  static const String scriptUrl = "https://script.google.com/macros/s/AKfycbxQuNB93CeO8DM8Oid9koQrzghKsfq_yNfv1nKhUflcHnyLOcSg4pc7AAAhehji-mF-/exec";
 
   static Future<List<Map<String, dynamic>>> fetchSheetData(String sheetName) async {
     try {
